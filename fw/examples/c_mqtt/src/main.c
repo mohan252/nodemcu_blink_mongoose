@@ -7,6 +7,7 @@
 #include "fw/src/mgos_mqtt.h"
 #include "fw/src/mgos_sys_config.h"
 #include "fw/src/mgos_wifi.h"
+#include "fw/src/mgos_timers.h"
 
 enum {
   ERROR_UNKNOWN_COMMAND = -1,
@@ -58,6 +59,17 @@ static void gpio_int_handler(int pin, void *arg) {
   (void) arg;
 }
 
+static mgos_timer_id g_timer_id;
+static int g_pin = 2;
+static int g_init_state = 0;
+
+static void blink(){
+  int final_state = (g_init_state > 0 ? 0 : 1);
+  LOG(LL_INFO, ("Set pin [%d] state from [%d] to [%d]",g_pin, g_init_state,final_state));
+  mgos_gpio_write(g_pin, final_state);
+  mgos_clear_timer(g_timer_id);
+}
+
 static void ev_handler(struct mg_connection *c, int ev, void *p) {
   struct mg_mqtt_message *msg = (struct mg_mqtt_message *) p;
 
@@ -79,7 +91,11 @@ static void ev_handler(struct mg_connection *c, int ev, void *p) {
                    &state) == 2) {
       /* Set GPIO pin to a given state */
       mgos_gpio_set_mode(pin, MGOS_GPIO_MODE_OUTPUT);
-      mgos_gpio_write(pin, (state > 0 ? 1 : 0));
+      g_init_state = state;
+      mgos_gpio_write(pin, state);
+      g_pin = pin;
+      g_timer_id = mgos_set_timer(2000,0,&blink,&pin);
+
       pub(c, "{type: %Q, pin: %d, state: %d}", "gpio", pin, state);
     } else if (json_scanf(s->p, s->len, "{button: {pin: %d}}", &pin) == 1) {
       /* Report button press on GPIO pin to a publish topic */
